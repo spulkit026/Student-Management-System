@@ -44,7 +44,7 @@ student records through a simple menu-driven interface.
 
 ### Compile
 ```bash
-g++ -std=c++17 -Wall -Wextra -o sms sms.cpp
+g++ -std=c++17 -Wall -Wextra -o sms Student_Management_System.cpp
 ```
 
 ### Run
