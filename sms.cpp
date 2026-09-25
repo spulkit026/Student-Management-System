@@ -2,64 +2,152 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <set>
+#include <limits>
+#include <algorithm>
 using namespace std;
+
+
+
+string readLine(const string &prompt) {
+    string value;
+    cout << prompt;
+    getline(cin, value);
+    return value;
+}
+
+string readNonEmptyLine(const string &prompt) {
+    string value;
+    do {
+        value = readLine(prompt);
+        if (value.empty()) {
+            cout << "This field cannot be empty. Please try again.\n";
+        }
+    } while (value.empty());
+    return value;
+}
+
+string readMobileNumber(const string &prompt) {
+    string value;
+    while (true) {
+        value = readLine(prompt);
+        bool allDigits = !value.empty() &&
+            all_of(value.begin(), value.end(), [](unsigned char c) { return isdigit(c); });
+        if (allDigits && value.length() == 10) {
+            return value;
+        }
+        cout << "Enter a valid 10-digit mobile number (digits only).\n";
+    }
+}
+
+
+short readYear(const string &prompt) {
+    short value;
+    while (true) {
+        cout << prompt;
+        cin >> value;
+        if (cin.fail()) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "Please enter a number between 1 and 4.\n";
+            continue;
+        }
+        cin.ignore(numeric_limits<streamsize>::max(), '\n'); // consume trailing newline
+        if (value < 1 || value > 4) {
+            cout << "Enter a valid year (1-4).\n";
+            continue;
+        }
+        return value;
+    }
+}
+
+int readMenuChoice(const string &prompt) {
+    int value;
+    while (true) {
+        cout << prompt;
+        cin >> value;
+        if (cin.fail()) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "Please enter a valid number.\n";
+            continue;
+        }
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        return value;
+    }
+}
+
+vector<string> splitCsvLine(const string &line) {
+    vector<string> fields;
+    stringstream ss(line);
+    string field;
+    while (getline(ss, field, ',')) {
+        fields.push_back(field);
+    }
+    return fields;
+}
 
 class SMS {
     string name;
     string id;
     string mobile_number;
     string course;
-    short year;
+    short year = 0;
     string state;
-    static int count;
 
 public:
     int no_of_students() {
-
         ifstream file("students.csv");
+        if (!file) return 0;
+
         string line;
         int student_count = 0;
 
-        getline(file, line);
+        getline(file, line); // skip header
 
         while (getline(file, line)) {
-            student_count++;
+            if (!line.empty()) student_count++;
         }
 
         file.close();
         return student_count;
     }
 
-    void create() {
-        cout << "Enter the name of the student: ";
-        cin >> name;
 
-        cout << "Enter the ID of the student: ";
-        cin >> id;
-        cout << "Enter the mobile number of the student: ";
-        do{
-        cin >> mobile_number;
-        if(mobile_number.length()!=10){
-        cout<<"Enter a 10-digit mobile number";}
+    bool id_exists(const string &check_id) {
+        ifstream file("students.csv");
+        if (!file) return false;
 
-       }
-        while(mobile_number.length()!=10);
+        string line;
+        getline(file, line); // skip header
 
-        cout << "Enter the course of the student: ";
-        cin >> course;
-        cout << "Enter the year of the student: ";
-        do{
-            cin >> year;
-            if(year<1 or year>4)
-                cout<<"Enter a valid year";
+        while (getline(file, line)) {
+            if (line.empty()) continue;
+            vector<string> fields = splitCsvLine(line);
+            if (fields.size() > 1 && fields[1] == check_id) {
+                return true;
+            }
         }
-        while(year<1 or year>4);
+        return false;
+    }
 
-        cout << "Enter the state of the student: ";
-        cin >> state;
+    bool create() {
+        name = readNonEmptyLine("Enter the name of the student: ");
 
-        count++;
+        while (true) {
+            id = readNonEmptyLine("Enter the ID of the student: ");
+            if (id_exists(id)) {
+                cout << "A student with ID \"" << id << "\" already exists. Please enter a different ID.\n";
+                continue;
+            }
+            break;
+        }
+
+        mobile_number = readMobileNumber("Enter the mobile number of the student: ");
+        course = readNonEmptyLine("Enter the course of the student: ");
+        year = readYear("Enter the year of the student (1-4): ");
+        state = readNonEmptyLine("Enter the state of the student: ");
+
+        return true;
     }
 
     void display() {
@@ -69,25 +157,22 @@ public:
         cout << "Mobile Number : " << mobile_number << endl;
         cout << "Course : " << course << endl;
         cout << "Year : " << year << endl;
-        cout << "City : " << state << endl;
+        cout << "State : " << state << endl;
     }
 
     void save_to_csv() {
         ifstream checkFile("students.csv");
-
         bool fileExists = checkFile.good();
         checkFile.close();
 
         ofstream file("students.csv", ios::app);
-
         if (!file) {
             cout << "Unable to open CSV file." << endl;
             return;
         }
 
-        // Write header only once
         if (!fileExists) {
-            file << "Name,ID,MobileNumber,Course,Year,City\n";
+            file << "Name,ID,MobileNumber,Course,Year,State\n";
         }
 
         file << name << ","
@@ -98,64 +183,66 @@ public:
              << state << "\n";
 
         file.close();
-
         cout << "Student record saved successfully to students.csv" << endl;
     }
 
-   void delete_from_csv() {
-    cout << "Enter the ID of the student to delete: ";
-    string delete_id;
-    cin >> delete_id;
+    // Fix: exact field match on ID instead of substring search.
+    void delete_from_csv() {
+        string delete_id = readNonEmptyLine("Enter the ID of the student to delete: ");
 
-    ifstream file("students.csv");
-    ofstream temp("temp.csv");
+        ifstream file("students.csv");
+        if (!file) {
+            cout << "Error: File Not Found!\n";
+            return;
+        }
 
-    string line;
-    bool found = false;
+        ofstream temp("temp.csv");
+        string line;
+        bool found = false;
 
-    getline(file, line);
-    temp << line << endl;
+        getline(file, line); // header
+        temp << line << "\n";
 
-    while (getline(file, line)) {
-        if (line.find("," + delete_id + ",") == string::npos) {
-            temp << line << endl;
+        while (getline(file, line)) {
+            if (line.empty()) continue;
+            vector<string> fields = splitCsvLine(line);
+            if (fields.size() > 1 && fields[1] == delete_id) {
+                found = true; // skip writing this line
+            } else {
+                temp << line << "\n";
+            }
+        }
+
+        file.close();
+        temp.close();
+
+        if (found) {
+            remove("students.csv");
+            rename("temp.csv", "students.csv");
+            cout << "Student record deleted successfully." << endl;
         } else {
-            found = true;
+            remove("temp.csv");
+            cout << "Student record not found." << endl;
         }
     }
 
-    file.close();
-    temp.close();
-
-    if (found) {
-        remove("students.csv");
-        rename("temp.csv", "students.csv");
-        cout << "Student record deleted successfully." << endl;
-        count--;
-    } else {
-        remove("temp.csv");
-        cout << "Student record not found." << endl;
-    }
-}
-void display_allrecord(){
+    void display_allrecord() {
         ifstream file("students.csv");
-        if(!file){
-            cout<<"Error: File Not Found!\n";
+        if (!file) {
+            cout << "Error: File Not Found!\n";
+            return;
         }
         string line;
         cout << "\n===== Student Records =====\n";
         while (getline(file, line)) {
-        cout << line << endl;
+            if (!line.empty()) cout << line << endl;
         }
         file.close();
-
     }
 
-    // Updated: repeatedly asks which field to update until the user chooses to exit
+    // Fix: exact field match on ID instead of substring search.
     void update() {
-        cout << "Enter the ID of the student to update: ";
-        string update_id;
-        cin >> update_id;
+        string update_id = readNonEmptyLine("Enter the ID of the student to update: ");
 
         ifstream file("students.csv");
         if (!file) {
@@ -170,14 +257,14 @@ void display_allrecord(){
         string line;
         bool found = false;
         int target_index = -1;
-        string target_line;
 
         int idx = 0;
         while (getline(file, line)) {
-            if (line.find("," + update_id + ",") != string::npos) {
+            if (line.empty()) continue;
+            vector<string> fields = splitCsvLine(line);
+            if (fields.size() > 1 && fields[1] == update_id) {
                 found = true;
                 target_index = idx;
-                target_line = line;
             }
             lines.push_back(line);
             idx++;
@@ -189,14 +276,8 @@ void display_allrecord(){
             return;
         }
 
-        // Parse the matched record into individual fields
-        vector<string> fields;
-        stringstream ss(target_line);
-        string field;
-        while (getline(ss, field, ',')) {
-            fields.push_back(field);
-        }
-        // fields[0]=Name, 1=ID, 2=MobileNumber, 3=Course, 4=Year, 5=City
+        vector<string> fields = splitCsvLine(lines[target_index]);
+   
 
         int choice;
         do {
@@ -206,54 +287,43 @@ void display_allrecord(){
             cout << "3. Mobile Number  : " << fields[2] << endl;
             cout << "4. Course         : " << fields[3] << endl;
             cout << "5. Year           : " << fields[4] << endl;
-            cout << "6. City           : " << fields[5] << endl;
+            cout << "6. State          : " << fields[5] << endl;
             cout << "7. Done updating (save and exit)\n";
-            cout << "Enter the field number you want to update: ";
-            cin >> choice;
+            choice = readMenuChoice("Enter the field number you want to update: ");
 
             switch (choice) {
             case 1:
-                cout << "Enter new name: ";
-                cin >> fields[0];
+                fields[0] = readNonEmptyLine("Enter new name: ");
                 break;
 
-            case 2:
-                cout << "Enter new ID: ";
-                cin >> fields[1];
-                break;
-
-            case 3: {
-                string new_mobile;
-                do {
-                    cout << "Enter new mobile number (10 digits): ";
-                    cin >> new_mobile;
-                    if (new_mobile.length() != 10)
-                        cout << "Enter a 10-digit mobile number\n";
-                } while (new_mobile.length() != 10);
-                fields[2] = new_mobile;
+            case 2: {
+                string new_id;
+                while (true) {
+                    new_id = readNonEmptyLine("Enter new ID: ");
+                    if (new_id != update_id && id_exists(new_id)) {
+                        cout << "A student with ID \"" << new_id << "\" already exists.\n";
+                        continue;
+                    }
+                    break;
+                }
+                fields[1] = new_id;
                 break;
             }
+
+            case 3:
+                fields[2] = readMobileNumber("Enter new mobile number (10 digits): ");
+                break;
 
             case 4:
-                cout << "Enter new course: ";
-                cin >> fields[3];
+                fields[3] = readNonEmptyLine("Enter new course: ");
                 break;
 
-            case 5: {
-                short new_year;
-                do {
-                    cout << "Enter new year (1-4): ";
-                    cin >> new_year;
-                    if (new_year < 1 || new_year > 4)
-                        cout << "Enter a valid year\n";
-                } while (new_year < 1 || new_year > 4);
-                fields[4] = to_string(new_year);
+            case 5:
+                fields[4] = to_string(readYear("Enter new year (1-4): "));
                 break;
-            }
 
             case 6:
-                cout << "Enter new city: ";
-                cin >> fields[5];
+                fields[5] = readNonEmptyLine("Enter new state: ");
                 break;
 
             case 7:
@@ -266,93 +336,74 @@ void display_allrecord(){
 
         } while (choice != 7);
 
-        // Reconstruct the updated CSV line and write everything back
         string updated_line = fields[0] + "," + fields[1] + "," + fields[2] + "," +
                                fields[3] + "," + fields[4] + "," + fields[5];
         lines[target_index] = updated_line;
 
         ofstream temp("students.csv");
-        temp << header << endl;
+        temp << header << "\n";
         for (auto &l : lines) {
-            temp << l << endl;
+            temp << l << "\n";
         }
         temp.close();
 
         cout << "Student record updated successfully." << endl;
     }
 
-void search() {
-    cout << "\nHow do you want to search?\n";
-    cout << "1. Search with ID\n";
-    cout << "2. Search with Name\n";
-    cout << "Enter your choice: ";
+    void search() {
+        cout << "\nHow do you want to search?\n";
+        cout << "1. Search with ID\n";
+        cout << "2. Search with Name\n";
+        int choice = readMenuChoice("Enter your choice: ");
 
-    int choice;
-    cin >> choice;
-    cin.ignore(); // clears the newline before getline()
-
-    string query;
-    if (choice == 1) {
-        cout << "Enter the ID: ";
-    } 
-    else if (choice == 2) {
-        cout << "Enter the name: ";
-    } 
-    else {
-        cout << "Invalid choice!\n";
-        return;
-    }
-
-    getline(cin, query);
-
-    ifstream file("students.csv");
-    if (!file) {
-        cout << "Error: File Not Found!\n";
-        return;
-    }
-
-    string line;
-    getline(file, line); // skip header row
-
-    bool found = false;
-
-    while (getline(file, line)) {
-        stringstream ss(line);
-
-        string csv_name, csv_id, csv_mobile, csv_course;
-        string csv_year, csv_state;
-
-        getline(ss, csv_name, ',');
-        getline(ss, csv_id, ',');
-        getline(ss, csv_mobile, ',');
-        getline(ss, csv_course, ',');
-        getline(ss, csv_year, ',');
-        getline(ss, csv_state, ',');
-
-        bool match = (choice == 1 && csv_id == query) ||
-                     (choice == 2 && csv_name == query);
-
-        if (match) {
-            cout << "\n----- Student Found -----\n";
-            cout << "Name          : " << csv_name << endl;
-            cout << "ID            : " << csv_id << endl;
-            cout << "Mobile Number : " << csv_mobile << endl;
-            cout << "Course        : " << csv_course << endl;
-            cout << "Year          : " << csv_year << endl;
-            cout << "State          : " << csv_state << endl;
-            found = true;
+        string query;
+        if (choice == 1) {
+            query = readNonEmptyLine("Enter the ID: ");
+        } else if (choice == 2) {
+            query = readNonEmptyLine("Enter the name: ");
+        } else {
+            cout << "Invalid choice!\n";
+            return;
         }
-    }
 
-    if (!found) {
-        cout << "Student record not found.\n";
-    }
+        ifstream file("students.csv");
+        if (!file) {
+            cout << "Error: File Not Found!\n";
+            return;
+        }
 
-    file.close();
-}
+        string line;
+        getline(file, line); // skip header
+
+        bool found = false;
+
+        while (getline(file, line)) {
+            if (line.empty()) continue;
+            vector<string> f = splitCsvLine(line);
+            if (f.size() < 6) continue;
+
+            bool match = (choice == 1 && f[1] == query) ||
+                         (choice == 2 && f[0] == query);
+
+            if (match) {
+                cout << "\n----- Student Found -----\n";
+                cout << "Name          : " << f[0] << endl;
+                cout << "ID            : " << f[1] << endl;
+                cout << "Mobile Number : " << f[2] << endl;
+                cout << "Course        : " << f[3] << endl;
+                cout << "Year          : " << f[4] << endl;
+                cout << "State         : " << f[5] << endl;
+                found = true;
+            }
+        }
+
+        if (!found) {
+            cout << "Student record not found.\n";
+        }
+
+        file.close();
+    }
 };
-
-int SMS::count = 0;
 
 int main() {
     SMS S1;
@@ -368,13 +419,13 @@ int main() {
         cout << "6. Display All Student Records\n";
         cout << "7. Search Student\n";
         cout << "8. Exit\n";
-        cout << "Enter your choice: ";
-        cin >> choice;
+        choice = readMenuChoice("Enter your choice: ");
 
         switch (choice) {
         case 1:
-            S1.create();
-            S1.save_to_csv();
+            if (S1.create()) {
+                S1.save_to_csv();
+            }
             break;
 
         case 2:
@@ -405,6 +456,7 @@ int main() {
         case 8:
             cout << "Exiting program...\n";
             break;
+
         default:
             cout << "Invalid choice! Please try again.\n";
         }
